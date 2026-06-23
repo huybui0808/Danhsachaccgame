@@ -2,8 +2,9 @@
 // Kho Acc Liên Quân — lưu trữ trên Cloudinary + JSONBin
 // =====================================================
 
-// ===== CONFIG (dùng lại từ web lưu bút) =====
-const BIN_ID = "6a2402c8f5f4af5e29c210b3";
+// ===== CONFIG =====
+// Bin riêng cho Kho Acc Liên Quân (tách khỏi bin web lưu bút để không vượt giới hạn 100kb)
+const BIN_ID = "6a3aababf5f4af5e2923fe57";
 const API_KEY = "$2a$10$nQb8E2FsCr2IFBogT76xee7Obj2dzRiVQKxV9NEB4Qt6GDYxMfeve";
 const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 const CLOUD_NAME = "dbmutd7dy";
@@ -16,6 +17,9 @@ async function layDuLieu() {
   const res = await fetch(API_URL + "/latest", {
     headers: { "X-Master-Key": API_KEY }
   });
+  if (!res.ok) {
+    throw new Error(`Không tải được dữ liệu (HTTP ${res.status})`);
+  }
   const json = await res.json();
   const record = json.record || {};
   const data = record.lq_accounts || [];
@@ -27,20 +31,27 @@ async function layDuLieu() {
 }
 
 async function luuDuLieu(data) {
-  // Đọc record hiện tại để giữ nguyên các key khác (luubut, v.v.)
-  const res = await fetch(API_URL + "/latest", {
-    headers: { "X-Master-Key": API_KEY }
-  });
-  const json = await res.json();
-  const record = json.record || {};
-  await fetch(API_URL, {
+  // Bin này dùng riêng cho acc, chỉ chứa key lq_accounts — ghi đè thẳng, không cần đọc trước
+  const putRes = await fetch(API_URL, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
       "X-Master-Key": API_KEY
     },
-    body: JSON.stringify({ ...record, lq_accounts: data })
+    body: JSON.stringify({ lq_accounts: data })
   });
+
+  if (!putRes.ok) {
+    let detail = "";
+    try {
+      const errJson = await putRes.json();
+      detail = errJson.message || "";
+    } catch {}
+    if (putRes.status === 413 || /too large|payload/i.test(detail)) {
+      throw new Error("Dữ liệu quá lớn — JSONBin từ chối lưu (quá nhiều/ảnh quá nặng). Hãy xoá vài ảnh hoặc giảm số lượng acc có ảnh.");
+    }
+    throw new Error(`Lưu lên JSONBin thất bại (HTTP ${putRes.status})${detail ? ": " + detail : ""}`);
+  }
 }
 
 // ===== CLOUDINARY =====
@@ -54,7 +65,10 @@ async function uploadAnhCloudinary(dataUrl) {
     { method: "POST", body: formData }
   );
   const data = await res.json();
-  if (!data.secure_url) throw new Error("Upload ảnh thất bại");
+  if (!res.ok || !data.secure_url) {
+    const msg = data?.error?.message || "Upload ảnh thất bại";
+    throw new Error(`Cloudinary: ${msg}`);
+  }
   return data.secure_url;
 }
 
@@ -485,7 +499,7 @@ accForm.addEventListener("submit", async e => {
     render();
   } catch (err) {
     console.error(err);
-    showToast("❌ Lỗi kết nối, thử lại nhé!");
+    showToast(`❌ ${err.message || "Lỗi kết nối, thử lại nhé!"}`);
   } finally {
     submitBtn.textContent = "Lưu";
     submitBtn.disabled = false;
