@@ -59,18 +59,20 @@
       <form id="accForm" class="form">
         <input type="hidden" id="accId" />
 
-        <label class="field">
-          <span class="field__label">Ảnh nhân vật (tuỳ chọn)</span>
+        <div class="field">
+          <span class="field__label">Ảnh skin (tuỳ chọn, chọn được nhiều ảnh)</span>
           <div class="imgpick" id="imgPick">
-            <img id="imgPreview" class="imgpick__preview" alt="" hidden />
-            <div id="imgPlaceholder" class="imgpick__placeholder">
-              <span class="imgpick__icon">🖼</span>
-              <span>Chọn ảnh từ máy</span>
-            </div>
+            <div class="imgpick__icon">🖼</div>
+            <div>Bấm để chọn ảnh từ máy</div>
+            <!-- input ẩn cho Chrome/desktop -->
+            <input id="fImageFile" type="file" accept="image/*" multiple class="imgpick__input" />
           </div>
-          <input id="fImageFile" type="file" accept="image/*" class="imgpick__input" />
-          <button type="button" id="btnRemoveImg" class="imgpick__remove" hidden>Xoá ảnh</button>
-        </label>
+          <!-- Nút dự phòng hiện rõ cho Acode / mobile browser không trigger input ẩn -->
+          <button type="button" id="btnPickFallback" class="btn btn--ghost imgpick__fallback">
+            📂 Chọn ảnh (Acode / mobile)
+          </button>
+          <div id="imgGrid" class="imggrid"></div>
+        </div>
 
         <label class="field">
           <span class="field__label">Tài khoản</span>
@@ -122,6 +124,28 @@
           <button id="confirmOk" class="btn btn--danger">Xoá</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal xem dàn ảnh skin -->
+  <div id="galleryOverlay" class="overlay" hidden>
+    <div class="modal modal--gallery">
+      <div class="modal__head">
+        <h2 id="galleryTitle">Ảnh skin</h2>
+        <button id="btnGalleryClose" class="iconbtn" aria-label="Đóng">✕</button>
+      </div>
+      <div id="galleryGrid" class="gallerygrid"></div>
+    </div>
+  </div>
+
+  <!-- Lightbox xem ảnh full kích thước -->
+  <div id="lightboxOverlay" class="overlay lightbox-overlay" hidden>
+    <div class="lightbox">
+      <button id="btnLightboxClose" class="lightbox__close" aria-label="Đóng">✕</button>
+      <button id="btnLightboxPrev" class="lightbox__nav lightbox__nav--prev" aria-label="Ảnh trước">‹</button>
+      <img id="lightboxImg" class="lightbox__img" src="" alt="Xem ảnh đầy đủ" />
+      <button id="btnLightboxNext" class="lightbox__nav lightbox__nav--next" aria-label="Ảnh tiếp">›</button>
+      <div id="lightboxCounter" class="lightbox__counter"></div>
     </div>
   </div>
 

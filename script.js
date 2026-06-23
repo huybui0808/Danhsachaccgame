@@ -5,8 +5,9 @@
 // =====================================================
 
 const STORAGE_KEY = "lq_accounts_v1";
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
-/** @typedef {{id:string, username:string, password:string, rank:string, status:string, note:string, image:string|null}} Account */
+/** @typedef {{id:string, username:string, password:string, rank:string, status:string, note:string, images:string[]}} Account */
 
 // ---------- Helpers lưu trữ ----------
 
@@ -16,7 +17,12 @@ function loadAccounts() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return seedAccounts();
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : seedAccounts();
+    if (!Array.isArray(parsed)) return seedAccounts();
+    // chuyển dữ liệu cũ (image: 1 ảnh) sang định dạng mới (images: nhiều ảnh)
+    return parsed.map((a) => ({
+      ...a,
+      images: Array.isArray(a.images) ? a.images : a.image ? [a.image] : [],
+    }));
   } catch (err) {
     console.error("Không đọc được dữ liệu acc:", err);
     return seedAccounts();
@@ -33,7 +39,7 @@ function seedAccounts() {
       rank: "",
       status: "Bị cấm chơi hết hạn vào 23 giờ 20 phút, ngày 24 tháng 6",
       note: "",
-      image: null,
+      images: [],
     },
     {
       id: genId(),
@@ -42,7 +48,7 @@ function seedAccounts() {
       rank: "",
       status: "Bị cấm chơi hết hạn vào 23 giờ 20 phút, ngày 24 tháng 6",
       note: "",
-      image: null,
+      images: [],
     },
   ];
 }
@@ -77,7 +83,7 @@ function escapeHtml(str) {
 let accounts = loadAccounts();
 let searchTerm = "";
 let pendingDeleteId = null;
-let currentImageData = null; // base64 ảnh đang chọn trong form
+let currentImages = []; // base64 các ảnh đang chọn trong form thêm/sửa
 
 // ---------- DOM refs ----------
 
@@ -98,9 +104,7 @@ const fNote = document.getElementById("fNote");
 const fImageFile = document.getElementById("fImageFile");
 
 const imgPick = document.getElementById("imgPick");
-const imgPreview = document.getElementById("imgPreview");
-const imgPlaceholder = document.getElementById("imgPlaceholder");
-const btnRemoveImg = document.getElementById("btnRemoveImg");
+const imgGrid = document.getElementById("imgGrid");
 
 const btnAdd = document.getElementById("btnAdd");
 const btnClose = document.getElementById("btnClose");
@@ -112,9 +116,63 @@ const confirmOverlay = document.getElementById("confirmOverlay");
 const confirmOk = document.getElementById("confirmOk");
 const confirmCancel = document.getElementById("confirmCancel");
 
+const galleryOverlay = document.getElementById("galleryOverlay");
+const galleryTitle = document.getElementById("galleryTitle");
+const galleryGrid = document.getElementById("galleryGrid");
+const btnGalleryClose = document.getElementById("btnGalleryClose");
+
+const lightboxOverlay = document.getElementById("lightboxOverlay");
+const lightboxImg = document.getElementById("lightboxImg");
+const lightboxCounter = document.getElementById("lightboxCounter");
+const btnLightboxClose = document.getElementById("btnLightboxClose");
+const btnLightboxPrev = document.getElementById("btnLightboxPrev");
+const btnLightboxNext = document.getElementById("btnLightboxNext");
+
 const toastEl = document.getElementById("toast");
 
-// ---------- Render ----------
+// ---------- Event delegation cho grid (gắn 1 lần, hoạt động dù innerHTML đổi) ----------
+// Giải quyết lỗi Chrome: bấm ảnh/nút trên card không phản hồi sau khi render lại
+
+grid.addEventListener("click", (e) => {
+  // Nút sửa
+  const editBtn = e.target.closest(".card__edit");
+  if (editBtn) {
+    const card = editBtn.closest(".card");
+    if (card) openEditModal(card.dataset.id);
+    return;
+  }
+  // Nút copy tài khoản
+  const copyUser = e.target.closest(".copybtn--user");
+  if (copyUser) {
+    const card = copyUser.closest(".card");
+    if (card) {
+      const acc = accounts.find((a) => a.id === card.dataset.id);
+      if (acc) copyToClipboard(acc.username, "Đã sao chép tài khoản");
+    }
+    return;
+  }
+  // Nút copy mật khẩu
+  const copyPass = e.target.closest(".copybtn--pass");
+  if (copyPass) {
+    const card = copyPass.closest(".card");
+    if (card) {
+      const acc = accounts.find((a) => a.id === card.dataset.id);
+      if (acc) copyToClipboard(acc.password, "Đã sao chép mật khẩu");
+    }
+    return;
+  }
+  // Bấm ảnh → mở gallery
+  const imgWrap = e.target.closest(".card__imgwrap");
+  if (imgWrap) {
+    const card = imgWrap.closest(".card");
+    if (card) {
+      const acc = accounts.find((a) => a.id === card.dataset.id);
+      if (acc) openGallery(acc);
+    }
+  }
+});
+
+// ---------- Render danh sách ----------
 
 function render() {
   const term = searchTerm.trim().toLowerCase();
@@ -143,26 +201,20 @@ function render() {
   emptyState.hidden = true;
   grid.innerHTML = filtered.map(cardTemplate).join("");
 
-  // gắn lại event listeners cho từng card vừa render
-  filtered.forEach((a) => {
-    const card = grid.querySelector(`[data-id="${a.id}"]`);
-    if (!card) return;
-    card.querySelector(".card__edit").addEventListener("click", () => openEditModal(a.id));
-    const copyUserBtn = card.querySelector(".copybtn--user");
-    if (copyUserBtn) {
-      copyUserBtn.addEventListener("click", () => copyToClipboard(a.username, "Đã sao chép tài khoản"));
-    }
-    const copyPassBtn = card.querySelector(".copybtn--pass");
-    if (copyPassBtn) {
-      copyPassBtn.addEventListener("click", () => copyToClipboard(a.password, "Đã sao chép mật khẩu"));
-    }
-  });
+
 }
 
 function cardTemplate(a) {
   const isBanned = /cấm|ban|khóa|cam|khoa/i.test(a.status || "");
-  const imgHtml = a.image
-    ? `<img class="card__img" src="${a.image}" alt="Ảnh nhân vật ${escapeHtml(a.username)}" />`
+  const images = a.images || [];
+
+  const imgHtml = images.length
+    ? `
+      <div class="card__imgwrap">
+        <img class="card__img" src="${images[0]}" alt="Ảnh skin ${escapeHtml(a.username)}" />
+        ${images.length > 1 ? `<span class="card__imgcount">+${images.length - 1} ảnh</span>` : ""}
+      </div>
+    `
     : "";
 
   return `
@@ -200,6 +252,81 @@ function cardTemplate(a) {
   `;
 }
 
+// ---------- Gallery xem dàn ảnh ----------
+
+let lightboxImages = [];
+let lightboxIndex = 0;
+
+function openGallery(account) {
+  const images = account.images || [];
+  if (!images.length) return;
+  galleryTitle.textContent = `Ảnh skin — ${account.username}`;
+  galleryGrid.innerHTML = images
+    .map(
+      (src, i) =>
+        `<img src="${src}" alt="Ảnh skin ${i + 1} của ${escapeHtml(account.username)}" data-index="${i}" style="cursor:pointer;" />`
+    )
+    .join("");
+
+  // Bấm vào ảnh trong gallery → mở lightbox
+  galleryGrid.querySelectorAll("img").forEach((img) => {
+    img.addEventListener("click", () => {
+      openLightbox(images, Number(img.dataset.index));
+    });
+  });
+
+  galleryOverlay.hidden = false;
+}
+
+function closeGallery() {
+  galleryOverlay.hidden = true;
+}
+
+// ---------- Lightbox ----------
+
+function openLightbox(images, startIndex) {
+  lightboxImages = images;
+  lightboxIndex = startIndex;
+  updateLightbox();
+  lightboxOverlay.hidden = false;
+}
+
+function updateLightbox() {
+  lightboxImg.src = lightboxImages[lightboxIndex];
+  lightboxCounter.textContent = `${lightboxIndex + 1} / ${lightboxImages.length}`;
+  btnLightboxPrev.hidden = lightboxIndex === 0;
+  btnLightboxNext.hidden = lightboxIndex === lightboxImages.length - 1;
+}
+
+function closeLightbox() {
+  lightboxOverlay.hidden = true;
+  lightboxImg.src = "";
+}
+
+btnLightboxClose.addEventListener("click", closeLightbox);
+btnLightboxPrev.addEventListener("click", () => {
+  if (lightboxIndex > 0) { lightboxIndex--; updateLightbox(); }
+});
+btnLightboxNext.addEventListener("click", () => {
+  if (lightboxIndex < lightboxImages.length - 1) { lightboxIndex++; updateLightbox(); }
+});
+lightboxOverlay.addEventListener("click", (e) => {
+  if (e.target === lightboxOverlay) closeLightbox();
+});
+// Phím mũi tên và ESC
+document.addEventListener("keydown", (e) => {
+  if (!lightboxOverlay.hidden) {
+    if (e.key === "ArrowLeft" && lightboxIndex > 0) { lightboxIndex--; updateLightbox(); }
+    if (e.key === "ArrowRight" && lightboxIndex < lightboxImages.length - 1) { lightboxIndex++; updateLightbox(); }
+    if (e.key === "Escape") closeLightbox();
+  }
+});
+
+btnGalleryClose.addEventListener("click", closeGallery);
+galleryOverlay.addEventListener("click", (e) => {
+  if (e.target === galleryOverlay) closeGallery();
+});
+
 // ---------- Toast ----------
 
 let toastTimer = null;
@@ -223,27 +350,43 @@ async function copyToClipboard(text, successMessage) {
 
 // ---------- Modal: thêm / sửa ----------
 
-function resetImagePicker() {
-  currentImageData = null;
-  imgPreview.hidden = true;
-  imgPreview.src = "";
-  imgPlaceholder.hidden = false;
-  btnRemoveImg.hidden = true;
-  fImageFile.value = "";
+function renderImageGrid() {
+  imgGrid.innerHTML = currentImages
+    .map(
+      (src, i) => `
+        <div class="imggrid__item" data-index="${i}">
+          <img src="${src}" alt="Ảnh skin ${i + 1}" />
+          <button type="button" class="imggrid__remove" aria-label="Xoá ảnh này">✕</button>
+        </div>
+      `
+    )
+    .join("");
+
+  imgGrid.querySelectorAll(".imggrid__remove").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const item = btn.closest(".imggrid__item");
+      const index = Number(item.dataset.index);
+      currentImages.splice(index, 1);
+      renderImageGrid();
+    });
+  });
 }
 
-function setImagePicker(dataUrl) {
-  currentImageData = dataUrl;
-  imgPreview.src = dataUrl;
-  imgPreview.hidden = false;
-  imgPlaceholder.hidden = true;
-  btnRemoveImg.hidden = false;
+function resetImagePicker() {
+  currentImages = [];
+  renderImageGrid();
 }
 
 function openAddModal() {
   modalTitle.textContent = "Thêm acc mới";
-  accForm.reset();
+  // Reset thủ công từng field, KHÔNG dùng accForm.reset() vì nó clear cả file input
   accIdField.value = "";
+  fUsername.value = "";
+  fPassword.value = "";
+  fRank.value = "";
+  fStatus.value = "";
+  fNote.value = "";
   btnDelete.hidden = true;
   resetImagePicker();
   fPassword.type = "password";
@@ -263,11 +406,9 @@ function openEditModal(id) {
   fStatus.value = a.status || "";
   fNote.value = a.note || "";
   btnDelete.hidden = false;
-  if (a.image) {
-    setImagePicker(a.image);
-  } else {
-    resetImagePicker();
-  }
+  currentImages = [...(a.images || [])];
+  fImageFile.value = "";
+  renderImageGrid();
   fPassword.type = "password";
   togglePw.textContent = "👁";
   modalOverlay.hidden = false;
@@ -291,28 +432,40 @@ togglePw.addEventListener("click", () => {
   togglePw.textContent = showing ? "👁" : "🙈";
 });
 
-// chọn ảnh
-imgPick.addEventListener("click", () => fImageFile.click());
+// Nút dự phòng cho Acode / mobile browser — trigger input file theo cách tường minh
+const btnPickFallback = document.getElementById("btnPickFallback");
+if (btnPickFallback) {
+  btnPickFallback.addEventListener("click", () => {
+    fImageFile.value = ""; // reset để có thể chọn lại ảnh cũ
+    fImageFile.click();
+  });
+}
+
+// chọn nhiều ảnh — input file phủ toàn bộ vùng imgPick, không cần JS trigger
 
 fImageFile.addEventListener("change", () => {
-  const file = fImageFile.files && fImageFile.files[0];
-  if (!file) return;
+  const files = Array.from(fImageFile.files || []);
+  if (!files.length) return;
 
-  if (file.size > 4 * 1024 * 1024) {
-    showToast("Ảnh quá lớn (tối đa ~4MB)");
-    fImageFile.value = "";
-    return;
+  let oversizedCount = 0;
+
+  files.forEach((file) => {
+    if (file.size > MAX_IMAGE_BYTES) {
+      oversizedCount++;
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      currentImages.push(reader.result);
+      renderImageGrid();
+    };
+    reader.onerror = () => showToast("Không đọc được một ảnh, thử ảnh khác");
+    reader.readAsDataURL(file);
+  });
+
+  if (oversizedCount > 0) {
+    showToast(`${oversizedCount} ảnh quá lớn (tối đa ~4MB) đã bị bỏ qua`);
   }
-
-  const reader = new FileReader();
-  reader.onload = () => setImagePicker(reader.result);
-  reader.onerror = () => showToast("Không đọc được ảnh, thử ảnh khác");
-  reader.readAsDataURL(file);
-});
-
-btnRemoveImg.addEventListener("click", (e) => {
-  e.stopPropagation();
-  resetImagePicker();
 });
 
 // submit thêm / sửa
@@ -334,7 +487,7 @@ accForm.addEventListener("submit", (e) => {
     rank: fRank.value.trim(),
     status: fStatus.value.trim(),
     note: fNote.value.trim(),
-    image: currentImageData || null,
+    images: [...currentImages],
   };
 
   if (id) {
