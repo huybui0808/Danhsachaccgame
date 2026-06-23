@@ -7,7 +7,7 @@ const BIN_ID = "6a2402c8f5f4af5e29c210b3";
 const API_KEY = "$2a$10$nQb8E2FsCr2IFBogT76xee7Obj2dzRiVQKxV9NEB4Qt6GDYxMfeve";
 const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 const CLOUD_NAME = "dbmutd7dy";
-const UPLOAD_PRESET = "shhs08e5";
+const UPLOAD_PRESET = "Luuacclq";
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
