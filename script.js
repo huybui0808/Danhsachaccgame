@@ -14,90 +14,99 @@ const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
 // ===== JSONBIN =====
 async function layDuLieu() {
-  const res = await fetch(API_URL + "/latest", {
-    headers: { "X-Master-Key": API_KEY }
-  });
-  if (!res.ok) {
-    throw new Error(`Không tải được dữ liệu (HTTP ${res.status})`);
-  }
-  const json = await res.json();
-  const record = json.record || {};
-  const data = record.lq_accounts || [];
-  // tương thích định dạng cũ
-  return data.map(a => ({
-    ...a,
-    images: Array.isArray(a.images) ? a.images : a.image ? [a.image] : []
-  }));
+    const res = await fetch(API_URL + "/latest", {
+        headers: { "X-Master-Key": API_KEY }
+    });
+    if (!res.ok) {
+        throw new Error(`Không tải được dữ liệu (HTTP ${res.status})`);
+    }
+    const json = await res.json();
+    const record = json.record || {};
+    const data = record.lq_accounts || [];
+    // tương thích định dạng cũ
+    return data.map(a => ({
+        ...a,
+        images: Array.isArray(a.images) ? a.images : a.image ? [a.image] : []
+    }));
 }
 
 async function luuDuLieu(data) {
-  // Bin này dùng riêng cho acc, chỉ chứa key lq_accounts — ghi đè thẳng, không cần đọc trước
-  const putRes = await fetch(API_URL, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Master-Key": API_KEY
-    },
-    body: JSON.stringify({ lq_accounts: data })
-  });
+    // Bin này dùng riêng cho acc, chỉ chứa key lq_accounts — ghi đè thẳng, không cần đọc trước
+    const putRes = await fetch(API_URL, {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+            "X-Master-Key": API_KEY
+        },
+        body: JSON.stringify({ lq_accounts: data })
+    });
 
-  if (!putRes.ok) {
-    let detail = "";
-    try {
-      const errJson = await putRes.json();
-      detail = errJson.message || "";
-    } catch {}
-    if (putRes.status === 413 || /too large|payload/i.test(detail)) {
-      throw new Error("Dữ liệu quá lớn — JSONBin từ chối lưu (quá nhiều/ảnh quá nặng). Hãy xoá vài ảnh hoặc giảm số lượng acc có ảnh.");
+    if (!putRes.ok) {
+        let detail = "";
+        try {
+            const errJson = await putRes.json();
+            detail = errJson.message || "";
+        } catch {}
+        if (putRes.status === 413 || /too large|payload/i.test(detail)) {
+            throw new Error(
+                "Dữ liệu quá lớn — JSONBin từ chối lưu (quá nhiều/ảnh quá nặng). Hãy xoá vài ảnh hoặc giảm số lượng acc có ảnh."
+            );
+        }
+        throw new Error(
+            `Lưu lên JSONBin thất bại (HTTP ${putRes.status})${detail ? ": " + detail : ""}`
+        );
     }
-    throw new Error(`Lưu lên JSONBin thất bại (HTTP ${putRes.status})${detail ? ": " + detail : ""}`);
-  }
 }
 
 // ===== CLOUDINARY =====
 async function uploadAnhCloudinary(dataUrl) {
-  const blob = await (await fetch(dataUrl)).blob();
-  const formData = new FormData();
-  formData.append("file", blob);
-  formData.append("upload_preset", UPLOAD_PRESET);
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
-    { method: "POST", body: formData }
-  );
-  const data = await res.json();
-  if (!res.ok || !data.secure_url) {
-    const msg = data?.error?.message || "Upload ảnh thất bại";
-    throw new Error(`Cloudinary: ${msg}`);
-  }
-  return data.secure_url;
+    const blob = await (await fetch(dataUrl)).blob();
+    const formData = new FormData();
+    formData.append("file", blob);
+    formData.append("upload_preset", UPLOAD_PRESET);
+    const res = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+        { method: "POST", body: formData }
+    );
+    const data = await res.json();
+    if (!res.ok || !data.secure_url) {
+        const msg = data?.error?.message || "Upload ảnh thất bại";
+        throw new Error(`Cloudinary: ${msg}`);
+    }
+    return data.secure_url;
 }
 
 // Upload nhiều ảnh, chỉ upload ảnh mới (base64), giữ nguyên link cũ
 async function uploadNhieuAnh(images) {
-  const results = [];
-  for (const src of images) {
-    if (src.startsWith("http")) {
-      results.push(src); // link Cloudinary cũ → giữ nguyên
-    } else {
-      const url = await uploadAnhCloudinary(src);
-      results.push(url);
+    const results = [];
+    for (const src of images) {
+        if (src.startsWith("http")) {
+            results.push(src); // link Cloudinary cũ → giữ nguyên
+        } else {
+            const url = await uploadAnhCloudinary(src);
+            results.push(url);
+        }
     }
-  }
-  return results;
+    return results;
 }
 
 // ===== HELPERS =====
 function genId() {
-  return "acc_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    return (
+        "acc_" +
+        Date.now().toString(36) +
+        "_" +
+        Math.random().toString(36).slice(2, 8)
+    );
 }
 
 function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 // ===== TRẠNG THÁI APP =====
@@ -152,55 +161,57 @@ const toastEl = document.getElementById("toast");
 
 // ===== LOADING STATE =====
 function setLoading(on) {
-  if (on) {
-    grid.innerHTML = `<p style="color:#888;text-align:center;padding:40px;grid-column:1/-1;">⏳ Đang tải dữ liệu...</p>`;
-    emptyState.hidden = true;
-  }
+    if (on) {
+        grid.innerHTML = `<p style="color:#888;text-align:center;padding:40px;grid-column:1/-1;">⏳ Đang tải dữ liệu...</p>`;
+        emptyState.hidden = true;
+    }
 }
 
 // ===== RENDER =====
 function render() {
-  const term = searchTerm.trim().toLowerCase();
-  const filtered = term
-    ? accounts.filter(a => a.username.toLowerCase().includes(term))
-    : accounts;
+    const term = searchTerm.trim().toLowerCase();
+    const filtered = term
+        ? accounts.filter(a => a.username.toLowerCase().includes(term))
+        : accounts;
 
-  countLabel.textContent = `${accounts.length} acc${term ? ` · ${filtered.length} khớp tìm kiếm` : ""}`;
+    countLabel.textContent = `${accounts.length} acc${term ? ` · ${filtered.length} khớp tìm kiếm` : ""}`;
 
-  if (accounts.length === 0) {
-    grid.innerHTML = "";
-    emptyState.hidden = false;
-    emptyState.querySelector("h2").textContent = "Chưa có acc nào";
-    emptyState.querySelector("p").textContent = 'Bấm "Thêm acc" để lưu acc đầu tiên của bạn.';
-    return;
-  }
+    if (accounts.length === 0) {
+        grid.innerHTML = "";
+        emptyState.hidden = false;
+        emptyState.querySelector("h2").textContent = "Chưa có acc nào";
+        emptyState.querySelector("p").textContent =
+            'Bấm "Thêm acc" để lưu acc đầu tiên của bạn.';
+        return;
+    }
 
-  if (filtered.length === 0) {
-    grid.innerHTML = "";
-    emptyState.hidden = false;
-    emptyState.querySelector("h2").textContent = "Không tìm thấy";
-    emptyState.querySelector("p").textContent = `Không có acc nào khớp với "${searchTerm}".`;
-    return;
-  }
+    if (filtered.length === 0) {
+        grid.innerHTML = "";
+        emptyState.hidden = false;
+        emptyState.querySelector("h2").textContent = "Không tìm thấy";
+        emptyState.querySelector("p").textContent =
+            `Không có acc nào khớp với "${searchTerm}".`;
+        return;
+    }
 
-  emptyState.hidden = true;
-  grid.innerHTML = filtered.map(cardTemplate).join("");
+    emptyState.hidden = true;
+    grid.innerHTML = filtered.map(cardTemplate).join("");
 }
 
 function cardTemplate(a) {
-  const isBanned = /cấm|ban|khóa|cam|khoa/i.test(a.status || "");
-  const images = a.images || [];
+    const isBanned = /cấm|ban|khóa|cam|khoa/i.test(a.status || "");
+    const images = a.images || [];
 
-  const imgHtml = images.length
-    ? `
+    const imgHtml = images.length
+        ? `
       <div class="card__imgwrap">
         <img class="card__img" src="${images[0]}" alt="Ảnh skin ${escapeHtml(a.username)}" />
         ${images.length > 1 ? `<span class="card__imgcount">+${images.length - 1} ảnh</span>` : ""}
       </div>
     `
-    : "";
+        : "";
 
-  return `
+    return `
     <article class="card" data-id="${a.id}">
       ${imgHtml}
       <div class="card__top">
@@ -232,38 +243,38 @@ function cardTemplate(a) {
 
 // ===== EVENT DELEGATION =====
 grid.addEventListener("click", e => {
-  const editBtn = e.target.closest(".card__edit");
-  if (editBtn) {
-    const card = editBtn.closest(".card");
-    if (card) openEditModal(card.dataset.id);
-    return;
-  }
-  const copyUser = e.target.closest(".copybtn--user");
-  if (copyUser) {
-    const card = copyUser.closest(".card");
-    if (card) {
-      const acc = accounts.find(a => a.id === card.dataset.id);
-      if (acc) copyToClipboard(acc.username, "Đã sao chép tài khoản");
+    const editBtn = e.target.closest(".card__edit");
+    if (editBtn) {
+        const card = editBtn.closest(".card");
+        if (card) openEditModal(card.dataset.id);
+        return;
     }
-    return;
-  }
-  const copyPass = e.target.closest(".copybtn--pass");
-  if (copyPass) {
-    const card = copyPass.closest(".card");
-    if (card) {
-      const acc = accounts.find(a => a.id === card.dataset.id);
-      if (acc) copyToClipboard(acc.password, "Đã sao chép mật khẩu");
+    const copyUser = e.target.closest(".copybtn--user");
+    if (copyUser) {
+        const card = copyUser.closest(".card");
+        if (card) {
+            const acc = accounts.find(a => a.id === card.dataset.id);
+            if (acc) copyToClipboard(acc.username, "Đã sao chép tài khoản");
+        }
+        return;
     }
-    return;
-  }
-  const imgWrap = e.target.closest(".card__imgwrap");
-  if (imgWrap) {
-    const card = imgWrap.closest(".card");
-    if (card) {
-      const acc = accounts.find(a => a.id === card.dataset.id);
-      if (acc) openGallery(acc);
+    const copyPass = e.target.closest(".copybtn--pass");
+    if (copyPass) {
+        const card = copyPass.closest(".card");
+        if (card) {
+            const acc = accounts.find(a => a.id === card.dataset.id);
+            if (acc) copyToClipboard(acc.password, "Đã sao chép mật khẩu");
+        }
+        return;
     }
-  }
+    const imgWrap = e.target.closest(".card__imgwrap");
+    if (imgWrap) {
+        const card = imgWrap.closest(".card");
+        if (card) {
+            const acc = accounts.find(a => a.id === card.dataset.id);
+            if (acc) openGallery(acc);
+        }
+    }
 });
 
 // ===== GALLERY =====
@@ -271,290 +282,317 @@ let lightboxImages = [];
 let lightboxIndex = 0;
 
 function openGallery(account) {
-  const images = account.images || [];
-  if (!images.length) return;
-  galleryTitle.textContent = `Ảnh skin — ${account.username}`;
-  galleryGrid.innerHTML = images
-    .map((src, i) =>
-      `<img src="${src}" alt="Ảnh skin ${i + 1} của ${escapeHtml(account.username)}" data-index="${i}" style="cursor:pointer;" />`
-    )
-    .join("");
-  galleryGrid.querySelectorAll("img").forEach(img => {
-    img.addEventListener("click", () => {
-      openLightbox(images, Number(img.dataset.index));
+    const images = account.images || [];
+    if (!images.length) return;
+    galleryTitle.textContent = `Ảnh skin — ${account.username}`;
+    galleryGrid.innerHTML = images
+        .map(
+            (src, i) =>
+                `<img src="${src}" alt="Ảnh skin ${i + 1} của ${escapeHtml(account.username)}" data-index="${i}" style="cursor:pointer;" />`
+        )
+        .join("");
+    galleryGrid.querySelectorAll("img").forEach(img => {
+        img.addEventListener("click", () => {
+            openLightbox(images, Number(img.dataset.index));
+        });
     });
-  });
-  galleryOverlay.hidden = false;
+    galleryOverlay.hidden = false;
 }
 
 function closeGallery() {
-  galleryOverlay.hidden = true;
+    galleryOverlay.hidden = true;
 }
 
 // ===== LIGHTBOX =====
 function openLightbox(images, startIndex) {
-  lightboxImages = images;
-  lightboxIndex = startIndex;
-  updateLightbox();
-  lightboxOverlay.hidden = false;
+    lightboxImages = images;
+    lightboxIndex = startIndex;
+    updateLightbox();
+    lightboxOverlay.hidden = false;
 }
 
 function updateLightbox() {
-  lightboxImg.src = lightboxImages[lightboxIndex];
-  lightboxCounter.textContent = `${lightboxIndex + 1} / ${lightboxImages.length}`;
-  btnLightboxPrev.hidden = lightboxIndex === 0;
-  btnLightboxNext.hidden = lightboxIndex === lightboxImages.length - 1;
+    lightboxImg.src = lightboxImages[lightboxIndex];
+    lightboxCounter.textContent = `${lightboxIndex + 1} / ${lightboxImages.length}`;
+    btnLightboxPrev.hidden = lightboxIndex === 0;
+    btnLightboxNext.hidden = lightboxIndex === lightboxImages.length - 1;
 }
 
 function closeLightbox() {
-  lightboxOverlay.hidden = true;
-  lightboxImg.src = "";
+    lightboxOverlay.hidden = true;
+    lightboxImg.src = "";
 }
 
 btnLightboxClose.addEventListener("click", closeLightbox);
 btnLightboxPrev.addEventListener("click", () => {
-  if (lightboxIndex > 0) { lightboxIndex--; updateLightbox(); }
+    if (lightboxIndex > 0) {
+        lightboxIndex--;
+        updateLightbox();
+    }
 });
 btnLightboxNext.addEventListener("click", () => {
-  if (lightboxIndex < lightboxImages.length - 1) { lightboxIndex++; updateLightbox(); }
+    if (lightboxIndex < lightboxImages.length - 1) {
+        lightboxIndex++;
+        updateLightbox();
+    }
 });
 lightboxOverlay.addEventListener("click", e => {
-  if (e.target === lightboxOverlay) closeLightbox();
+    if (e.target === lightboxOverlay) closeLightbox();
 });
 document.addEventListener("keydown", e => {
-  if (!lightboxOverlay.hidden) {
-    if (e.key === "ArrowLeft" && lightboxIndex > 0) { lightboxIndex--; updateLightbox(); }
-    if (e.key === "ArrowRight" && lightboxIndex < lightboxImages.length - 1) { lightboxIndex++; updateLightbox(); }
-    if (e.key === "Escape") closeLightbox();
-  }
+    if (!lightboxOverlay.hidden) {
+        if (e.key === "ArrowLeft" && lightboxIndex > 0) {
+            lightboxIndex--;
+            updateLightbox();
+        }
+        if (
+            e.key === "ArrowRight" &&
+            lightboxIndex < lightboxImages.length - 1
+        ) {
+            lightboxIndex++;
+            updateLightbox();
+        }
+        if (e.key === "Escape") closeLightbox();
+    }
 });
 
 btnGalleryClose.addEventListener("click", closeGallery);
 galleryOverlay.addEventListener("click", e => {
-  if (e.target === galleryOverlay) closeGallery();
+    if (e.target === galleryOverlay) closeGallery();
 });
 
 // ===== TOAST =====
 let toastTimer = null;
 function showToast(message) {
-  toastEl.textContent = message;
-  toastEl.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2200);
+    toastEl.textContent = message;
+    toastEl.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+        toastEl.hidden = true;
+    }, 2200);
 }
 
 async function copyToClipboard(text, successMessage) {
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast(successMessage || "Đã sao chép");
-  } catch {
-    showToast("Không sao chép được — hãy chọn và copy tay");
-  }
+    try {
+        await navigator.clipboard.writeText(text);
+        showToast(successMessage || "Đã sao chép");
+    } catch {
+        showToast("Không sao chép được — hãy chọn và copy tay");
+    }
 }
 
 // ===== MODAL THÊM / SỬA =====
 function renderImageGrid() {
-  imgGrid.innerHTML = currentImages
-    .map((src, i) => `
+    imgGrid.innerHTML = currentImages
+        .map(
+            (src, i) => `
       <div class="imggrid__item" data-index="${i}">
         <img src="${src}" alt="Ảnh skin ${i + 1}" />
         <button type="button" class="imggrid__remove" aria-label="Xoá ảnh này">✕</button>
       </div>
-    `)
-    .join("");
+    `
+        )
+        .join("");
 
-  imgGrid.querySelectorAll(".imggrid__remove").forEach(btn => {
-    btn.addEventListener("click", e => {
-      e.stopPropagation();
-      const item = btn.closest(".imggrid__item");
-      const index = Number(item.dataset.index);
-      currentImages.splice(index, 1);
-      renderImageGrid();
+    imgGrid.querySelectorAll(".imggrid__remove").forEach(btn => {
+        btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const item = btn.closest(".imggrid__item");
+            const index = Number(item.dataset.index);
+            currentImages.splice(index, 1);
+            renderImageGrid();
+        });
     });
-  });
 }
 
 function resetImagePicker() {
-  currentImages = [];
-  renderImageGrid();
+    currentImages = [];
+    renderImageGrid();
 }
 
 function openAddModal() {
-  modalTitle.textContent = "Thêm acc mới";
-  accIdField.value = "";
-  fUsername.value = "";
-  fPassword.value = "";
-  fRank.value = "";
-  fStatus.value = "";
-  fNote.value = "";
-  btnDelete.hidden = true;
-  resetImagePicker();
-  fPassword.type = "password";
-  togglePw.textContent = "👁";
-  modalOverlay.hidden = false;
-  setTimeout(() => fUsername.focus(), 50);
+    modalTitle.textContent = "Thêm acc mới";
+    accIdField.value = "";
+    fUsername.value = "";
+    fPassword.value = "";
+    fRank.value = "";
+    fStatus.value = "";
+    fNote.value = "";
+    btnDelete.hidden = true;
+    resetImagePicker();
+    fPassword.type = "password";
+    togglePw.textContent = "👁";
+    modalOverlay.hidden = false;
+    setTimeout(() => fUsername.focus(), 50);
 }
 
 function openEditModal(id) {
-  const a = accounts.find(x => x.id === id);
-  if (!a) return;
-  modalTitle.textContent = "Sửa acc";
-  accIdField.value = a.id;
-  fUsername.value = a.username;
-  fPassword.value = a.password;
-  fRank.value = a.rank || "";
-  fStatus.value = a.status || "";
-  fNote.value = a.note || "";
-  btnDelete.hidden = false;
-  currentImages = [...(a.images || [])];
-  fImageFile.value = "";
-  renderImageGrid();
-  fPassword.type = "password";
-  togglePw.textContent = "👁";
-  modalOverlay.hidden = false;
-  setTimeout(() => fUsername.focus(), 50);
+    const a = accounts.find(x => x.id === id);
+    if (!a) return;
+    modalTitle.textContent = "Sửa acc";
+    accIdField.value = a.id;
+    fUsername.value = a.username;
+    fPassword.value = a.password;
+    fRank.value = a.rank || "";
+    fStatus.value = a.status || "";
+    fNote.value = a.note || "";
+    btnDelete.hidden = false;
+    currentImages = [...(a.images || [])];
+    fImageFile.value = "";
+    renderImageGrid();
+    fPassword.type = "password";
+    togglePw.textContent = "👁";
+    modalOverlay.hidden = false;
+    setTimeout(() => fUsername.focus(), 50);
 }
 
 function closeModal() {
-  modalOverlay.hidden = true;
+    modalOverlay.hidden = true;
 }
 
 btnAdd.addEventListener("click", openAddModal);
 btnClose.addEventListener("click", closeModal);
 btnCancel.addEventListener("click", closeModal);
 modalOverlay.addEventListener("click", e => {
-  if (e.target === modalOverlay) closeModal();
+    if (e.target === modalOverlay) closeModal();
 });
 
 togglePw.addEventListener("click", () => {
-  const showing = fPassword.type === "text";
-  fPassword.type = showing ? "password" : "text";
-  togglePw.textContent = showing ? "👁" : "🙈";
+    const showing = fPassword.type === "text";
+    fPassword.type = showing ? "password" : "text";
+    togglePw.textContent = showing ? "👁" : "🙈";
 });
 
 const btnPickFallback = document.getElementById("btnPickFallback");
 if (btnPickFallback) {
-  btnPickFallback.addEventListener("click", () => {
-    fImageFile.value = "";
-    fImageFile.click();
-  });
+    btnPickFallback.addEventListener("click", () => {
+        fImageFile.value = "";
+        fImageFile.click();
+    });
 }
 
 fImageFile.addEventListener("change", () => {
-  const files = Array.from(fImageFile.files || []);
-  if (!files.length) return;
-  let oversizedCount = 0;
-  files.forEach(file => {
-    if (file.size > MAX_IMAGE_BYTES) { oversizedCount++; return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      currentImages.push(reader.result);
-      renderImageGrid();
-    };
-    reader.onerror = () => showToast("Không đọc được một ảnh, thử ảnh khác");
-    reader.readAsDataURL(file);
-  });
-  if (oversizedCount > 0) showToast(`${oversizedCount} ảnh quá lớn (tối đa ~4MB) đã bị bỏ qua`);
+    const files = Array.from(fImageFile.files || []);
+    if (!files.length) return;
+    let oversizedCount = 0;
+    files.forEach(file => {
+        if (file.size > MAX_IMAGE_BYTES) {
+            oversizedCount++;
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            currentImages.push(reader.result);
+            renderImageGrid();
+        };
+        reader.onerror = () =>
+            showToast("Không đọc được một ảnh, thử ảnh khác");
+        reader.readAsDataURL(file);
+    });
+    if (oversizedCount > 0)
+        showToast(`${oversizedCount} ảnh quá lớn (tối đa ~4MB) đã bị bỏ qua`);
 });
 
 // ===== SUBMIT: LƯU ACC =====
 accForm.addEventListener("submit", async e => {
-  e.preventDefault();
+    e.preventDefault();
 
-  const username = fUsername.value.trim();
-  const password = fPassword.value.trim();
-  if (!username || !password) {
-    showToast("Cần nhập đủ tài khoản và mật khẩu");
-    return;
-  }
-
-  const submitBtn = accForm.querySelector('[type="submit"]');
-  submitBtn.textContent = "⏳ Đang upload...";
-  submitBtn.disabled = true;
-
-  try {
-    // Upload ảnh mới lên Cloudinary, giữ nguyên link cũ
-    const uploadedImages = await uploadNhieuAnh(currentImages);
-
-    const id = accIdField.value;
-    const payload = {
-      username,
-      password,
-      rank: fRank.value.trim(),
-      status: fStatus.value.trim(),
-      note: fNote.value.trim(),
-      images: uploadedImages
-    };
-
-    if (id) {
-      accounts = accounts.map(a => a.id === id ? { ...a, ...payload } : a);
-      showToast("Đã lưu thay đổi ✅");
-    } else {
-      accounts.push({ id: genId(), ...payload });
-      showToast("Đã thêm acc mới ✅");
+    const username = fUsername.value.trim();
+    const password = fPassword.value.trim();
+    if (!username || !password) {
+        showToast("Cần nhập đủ tài khoản và mật khẩu");
+        return;
     }
 
-    await luuDuLieu(accounts);
-    closeModal();
-    render();
-  } catch (err) {
-    console.error(err);
-    showToast(`❌ ${err.message || "Lỗi kết nối, thử lại nhé!"}`);
-  } finally {
-    submitBtn.textContent = "Lưu";
-    submitBtn.disabled = false;
-  }
+    const submitBtn = accForm.querySelector('[type="submit"]');
+    submitBtn.textContent = "⏳ Đang upload...";
+    submitBtn.disabled = true;
+
+    try {
+        // Upload ảnh mới lên Cloudinary, giữ nguyên link cũ
+        const uploadedImages = await uploadNhieuAnh(currentImages);
+
+        const id = accIdField.value;
+        const payload = {
+            username,
+            password,
+            rank: fRank.value.trim(),
+            status: fStatus.value.trim(),
+            note: fNote.value.trim(),
+            images: uploadedImages
+        };
+
+        if (id) {
+            accounts = accounts.map(a =>
+                a.id === id ? { ...a, ...payload } : a
+            );
+            showToast("Đã lưu thay đổi ✅");
+        } else {
+            accounts.push({ id: genId(), ...payload });
+            showToast("Đã thêm acc mới ✅");
+        }
+
+        await luuDuLieu(accounts);
+        closeModal();
+        render();
+    } catch (err) {
+        console.error(err);
+        showToast(`❌ ${err.message || "Lỗi kết nối, thử lại nhé!"}`);
+    } finally {
+        submitBtn.textContent = "Lưu";
+        submitBtn.disabled = false;
+    }
 });
 
 // ===== XOÁ ACC =====
 btnDelete.addEventListener("click", () => {
-  pendingDeleteId = accIdField.value;
-  if (!pendingDeleteId) return;
-  closeModal();
-  confirmOverlay.hidden = false;
+    pendingDeleteId = accIdField.value;
+    if (!pendingDeleteId) return;
+    closeModal();
+    confirmOverlay.hidden = false;
 });
 
 confirmCancel.addEventListener("click", () => {
-  pendingDeleteId = null;
-  confirmOverlay.hidden = true;
+    pendingDeleteId = null;
+    confirmOverlay.hidden = true;
 });
 
 confirmOverlay.addEventListener("click", e => {
-  if (e.target === confirmOverlay) {
-    pendingDeleteId = null;
-    confirmOverlay.hidden = true;
-  }
+    if (e.target === confirmOverlay) {
+        pendingDeleteId = null;
+        confirmOverlay.hidden = true;
+    }
 });
 
 confirmOk.addEventListener("click", async () => {
-  if (!pendingDeleteId) return;
-  accounts = accounts.filter(a => a.id !== pendingDeleteId);
-  try {
-    await luuDuLieu(accounts);
-    showToast("Đã xoá acc");
-  } catch {
-    showToast("❌ Lỗi khi xoá, thử lại!");
-  }
-  pendingDeleteId = null;
-  confirmOverlay.hidden = true;
-  render();
+    if (!pendingDeleteId) return;
+    accounts = accounts.filter(a => a.id !== pendingDeleteId);
+    try {
+        await luuDuLieu(accounts);
+        showToast("Đã xoá acc");
+    } catch {
+        showToast("❌ Lỗi khi xoá, thử lại!");
+    }
+    pendingDeleteId = null;
+    confirmOverlay.hidden = true;
+    render();
 });
 
 // ===== TÌM KIẾM =====
 searchBox.addEventListener("input", () => {
-  searchTerm = searchBox.value;
-  render();
+    searchTerm = searchBox.value;
+    render();
 });
 
 // ===== KHỞI ĐỘNG =====
 (async () => {
-  setLoading(true);
-  try {
-    accounts = await layDuLieu();
-  } catch (err) {
-    console.error(err);
-    showToast("❌ Không tải được dữ liệu!");
-    accounts = [];
-  }
-  render();
+    setLoading(true);
+    try {
+        accounts = await layDuLieu();
+    } catch (err) {
+        console.error(err);
+        showToast("❌ Không tải được dữ liệu!");
+        accounts = [];
+    }
+    render();
 })();
