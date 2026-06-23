@@ -1,70 +1,78 @@
 // =====================================================
-// Kho Acc Liên Quân — logic lưu trữ + thao tác trên web
-// Dữ liệu được lưu trong localStorage của trình duyệt
-// (chỉ tồn tại trên máy/trình duyệt đang dùng)
+// Kho Acc Liên Quân — lưu trữ trên Cloudinary + JSONBin
 // =====================================================
 
-const STORAGE_KEY = "lq_accounts_v1";
+// ===== CONFIG (dùng lại từ web lưu bút) =====
+const BIN_ID = "6a2402c8f5f4af5e29c210b3";
+const API_KEY = "$2a$10$nQb8E2FsCr2IFBogT76xee7Obj2dzRiVQKxV9NEB4Qt6GDYxMfeve";
+const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+const CLOUD_NAME = "dbmutd7dy";
+const UPLOAD_PRESET = "shhs08e5";
+
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 
-/** @typedef {{id:string, username:string, password:string, rank:string, status:string, note:string, images:string[]}} Account */
-
-// ---------- Helpers lưu trữ ----------
-
-/** @returns {Account[]} */
-function loadAccounts() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return seedAccounts();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return seedAccounts();
-    // chuyển dữ liệu cũ (image: 1 ảnh) sang định dạng mới (images: nhiều ảnh)
-    return parsed.map((a) => ({
-      ...a,
-      images: Array.isArray(a.images) ? a.images : a.image ? [a.image] : [],
-    }));
-  } catch (err) {
-    console.error("Không đọc được dữ liệu acc:", err);
-    return seedAccounts();
-  }
+// ===== JSONBIN =====
+async function layDuLieu() {
+  const res = await fetch(API_URL + "/latest", {
+    headers: { "X-Master-Key": API_KEY }
+  });
+  const json = await res.json();
+  const record = json.record || {};
+  const data = record.lq_accounts || [];
+  // tương thích định dạng cũ
+  return data.map(a => ({
+    ...a,
+    images: Array.isArray(a.images) ? a.images : a.image ? [a.image] : []
+  }));
 }
 
-/** Dữ liệu mẫu hiển thị lần đầu mở trang (khi chưa lưu gì) */
-function seedAccounts() {
-  return [
-    {
-      id: genId(),
-      username: "ghosttrip123",
-      password: "QC@1312dom04",
-      rank: "",
-      status: "Bị cấm chơi hết hạn vào 23 giờ 20 phút, ngày 24 tháng 6",
-      note: "",
-      images: [],
+async function luuDuLieu(data) {
+  // Đọc record hiện tại để giữ nguyên các key khác (luubut, v.v.)
+  const res = await fetch(API_URL + "/latest", {
+    headers: { "X-Master-Key": API_KEY }
+  });
+  const json = await res.json();
+  const record = json.record || {};
+  await fetch(API_URL, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Master-Key": API_KEY
     },
-    {
-      id: genId(),
-      username: "nhatthien101998",
-      password: "thien1998",
-      rank: "",
-      status: "Bị cấm chơi hết hạn vào 23 giờ 20 phút, ngày 24 tháng 6",
-      note: "",
-      images: [],
-    },
-  ];
+    body: JSON.stringify({ ...record, lq_accounts: data })
+  });
 }
 
-/** @param {Account[]} accounts */
-function saveAccounts(accounts) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-    return true;
-  } catch (err) {
-    console.error("Không lưu được dữ liệu acc:", err);
-    showToast("Lưu thất bại — bộ nhớ trình duyệt có thể đã đầy.");
-    return false;
+// ===== CLOUDINARY =====
+async function uploadAnhCloudinary(dataUrl) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const formData = new FormData();
+  formData.append("file", blob);
+  formData.append("upload_preset", UPLOAD_PRESET);
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+    { method: "POST", body: formData }
+  );
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Upload ảnh thất bại");
+  return data.secure_url;
+}
+
+// Upload nhiều ảnh, chỉ upload ảnh mới (base64), giữ nguyên link cũ
+async function uploadNhieuAnh(images) {
+  const results = [];
+  for (const src of images) {
+    if (src.startsWith("http")) {
+      results.push(src); // link Cloudinary cũ → giữ nguyên
+    } else {
+      const url = await uploadAnhCloudinary(src);
+      results.push(url);
+    }
   }
+  return results;
 }
 
+// ===== HELPERS =====
 function genId() {
   return "acc_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
 }
@@ -78,15 +86,13 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-// ---------- Trạng thái app ----------
-
-let accounts = loadAccounts();
+// ===== TRẠNG THÁI APP =====
+let accounts = [];
 let searchTerm = "";
 let pendingDeleteId = null;
-let currentImages = []; // base64 các ảnh đang chọn trong form thêm/sửa
+let currentImages = [];
 
-// ---------- DOM refs ----------
-
+// ===== DOM REFS =====
 const grid = document.getElementById("grid");
 const emptyState = document.getElementById("emptyState");
 const countLabel = document.getElementById("countLabel");
@@ -130,54 +136,19 @@ const btnLightboxNext = document.getElementById("btnLightboxNext");
 
 const toastEl = document.getElementById("toast");
 
-// ---------- Event delegation cho grid (gắn 1 lần, hoạt động dù innerHTML đổi) ----------
-// Giải quyết lỗi Chrome: bấm ảnh/nút trên card không phản hồi sau khi render lại
+// ===== LOADING STATE =====
+function setLoading(on) {
+  if (on) {
+    grid.innerHTML = `<p style="color:#888;text-align:center;padding:40px;grid-column:1/-1;">⏳ Đang tải dữ liệu...</p>`;
+    emptyState.hidden = true;
+  }
+}
 
-grid.addEventListener("click", (e) => {
-  // Nút sửa
-  const editBtn = e.target.closest(".card__edit");
-  if (editBtn) {
-    const card = editBtn.closest(".card");
-    if (card) openEditModal(card.dataset.id);
-    return;
-  }
-  // Nút copy tài khoản
-  const copyUser = e.target.closest(".copybtn--user");
-  if (copyUser) {
-    const card = copyUser.closest(".card");
-    if (card) {
-      const acc = accounts.find((a) => a.id === card.dataset.id);
-      if (acc) copyToClipboard(acc.username, "Đã sao chép tài khoản");
-    }
-    return;
-  }
-  // Nút copy mật khẩu
-  const copyPass = e.target.closest(".copybtn--pass");
-  if (copyPass) {
-    const card = copyPass.closest(".card");
-    if (card) {
-      const acc = accounts.find((a) => a.id === card.dataset.id);
-      if (acc) copyToClipboard(acc.password, "Đã sao chép mật khẩu");
-    }
-    return;
-  }
-  // Bấm ảnh → mở gallery
-  const imgWrap = e.target.closest(".card__imgwrap");
-  if (imgWrap) {
-    const card = imgWrap.closest(".card");
-    if (card) {
-      const acc = accounts.find((a) => a.id === card.dataset.id);
-      if (acc) openGallery(acc);
-    }
-  }
-});
-
-// ---------- Render danh sách ----------
-
+// ===== RENDER =====
 function render() {
   const term = searchTerm.trim().toLowerCase();
   const filtered = term
-    ? accounts.filter((a) => a.username.toLowerCase().includes(term))
+    ? accounts.filter(a => a.username.toLowerCase().includes(term))
     : accounts;
 
   countLabel.textContent = `${accounts.length} acc${term ? ` · ${filtered.length} khớp tìm kiếm` : ""}`;
@@ -200,8 +171,6 @@ function render() {
 
   emptyState.hidden = true;
   grid.innerHTML = filtered.map(cardTemplate).join("");
-
-
 }
 
 function cardTemplate(a) {
@@ -241,19 +210,49 @@ function cardTemplate(a) {
         </div>
       </div>
 
-      ${
-        a.status
-          ? `<div class="card__status ${isBanned ? "card__status--banned" : ""}">${escapeHtml(a.status)}</div>`
-          : ""
-      }
-
+      ${a.status ? `<div class="card__status ${isBanned ? "card__status--banned" : ""}">${escapeHtml(a.status)}</div>` : ""}
       ${a.note ? `<div class="card__note">${escapeHtml(a.note)}</div>` : ""}
     </article>
   `;
 }
 
-// ---------- Gallery xem dàn ảnh ----------
+// ===== EVENT DELEGATION =====
+grid.addEventListener("click", e => {
+  const editBtn = e.target.closest(".card__edit");
+  if (editBtn) {
+    const card = editBtn.closest(".card");
+    if (card) openEditModal(card.dataset.id);
+    return;
+  }
+  const copyUser = e.target.closest(".copybtn--user");
+  if (copyUser) {
+    const card = copyUser.closest(".card");
+    if (card) {
+      const acc = accounts.find(a => a.id === card.dataset.id);
+      if (acc) copyToClipboard(acc.username, "Đã sao chép tài khoản");
+    }
+    return;
+  }
+  const copyPass = e.target.closest(".copybtn--pass");
+  if (copyPass) {
+    const card = copyPass.closest(".card");
+    if (card) {
+      const acc = accounts.find(a => a.id === card.dataset.id);
+      if (acc) copyToClipboard(acc.password, "Đã sao chép mật khẩu");
+    }
+    return;
+  }
+  const imgWrap = e.target.closest(".card__imgwrap");
+  if (imgWrap) {
+    const card = imgWrap.closest(".card");
+    if (card) {
+      const acc = accounts.find(a => a.id === card.dataset.id);
+      if (acc) openGallery(acc);
+    }
+  }
+});
 
+// ===== GALLERY =====
 let lightboxImages = [];
 let lightboxIndex = 0;
 
@@ -262,19 +261,15 @@ function openGallery(account) {
   if (!images.length) return;
   galleryTitle.textContent = `Ảnh skin — ${account.username}`;
   galleryGrid.innerHTML = images
-    .map(
-      (src, i) =>
-        `<img src="${src}" alt="Ảnh skin ${i + 1} của ${escapeHtml(account.username)}" data-index="${i}" style="cursor:pointer;" />`
+    .map((src, i) =>
+      `<img src="${src}" alt="Ảnh skin ${i + 1} của ${escapeHtml(account.username)}" data-index="${i}" style="cursor:pointer;" />`
     )
     .join("");
-
-  // Bấm vào ảnh trong gallery → mở lightbox
-  galleryGrid.querySelectorAll("img").forEach((img) => {
+  galleryGrid.querySelectorAll("img").forEach(img => {
     img.addEventListener("click", () => {
       openLightbox(images, Number(img.dataset.index));
     });
   });
-
   galleryOverlay.hidden = false;
 }
 
@@ -282,8 +277,7 @@ function closeGallery() {
   galleryOverlay.hidden = true;
 }
 
-// ---------- Lightbox ----------
-
+// ===== LIGHTBOX =====
 function openLightbox(images, startIndex) {
   lightboxImages = images;
   lightboxIndex = startIndex;
@@ -310,11 +304,10 @@ btnLightboxPrev.addEventListener("click", () => {
 btnLightboxNext.addEventListener("click", () => {
   if (lightboxIndex < lightboxImages.length - 1) { lightboxIndex++; updateLightbox(); }
 });
-lightboxOverlay.addEventListener("click", (e) => {
+lightboxOverlay.addEventListener("click", e => {
   if (e.target === lightboxOverlay) closeLightbox();
 });
-// Phím mũi tên và ESC
-document.addEventListener("keydown", (e) => {
+document.addEventListener("keydown", e => {
   if (!lightboxOverlay.hidden) {
     if (e.key === "ArrowLeft" && lightboxIndex > 0) { lightboxIndex--; updateLightbox(); }
     if (e.key === "ArrowRight" && lightboxIndex < lightboxImages.length - 1) { lightboxIndex++; updateLightbox(); }
@@ -323,20 +316,17 @@ document.addEventListener("keydown", (e) => {
 });
 
 btnGalleryClose.addEventListener("click", closeGallery);
-galleryOverlay.addEventListener("click", (e) => {
+galleryOverlay.addEventListener("click", e => {
   if (e.target === galleryOverlay) closeGallery();
 });
 
-// ---------- Toast ----------
-
+// ===== TOAST =====
 let toastTimer = null;
 function showToast(message) {
   toastEl.textContent = message;
   toastEl.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastEl.hidden = true;
-  }, 2200);
+  toastTimer = setTimeout(() => { toastEl.hidden = true; }, 2200);
 }
 
 async function copyToClipboard(text, successMessage) {
@@ -348,22 +338,19 @@ async function copyToClipboard(text, successMessage) {
   }
 }
 
-// ---------- Modal: thêm / sửa ----------
-
+// ===== MODAL THÊM / SỬA =====
 function renderImageGrid() {
   imgGrid.innerHTML = currentImages
-    .map(
-      (src, i) => `
-        <div class="imggrid__item" data-index="${i}">
-          <img src="${src}" alt="Ảnh skin ${i + 1}" />
-          <button type="button" class="imggrid__remove" aria-label="Xoá ảnh này">✕</button>
-        </div>
-      `
-    )
+    .map((src, i) => `
+      <div class="imggrid__item" data-index="${i}">
+        <img src="${src}" alt="Ảnh skin ${i + 1}" />
+        <button type="button" class="imggrid__remove" aria-label="Xoá ảnh này">✕</button>
+      </div>
+    `)
     .join("");
 
-  imgGrid.querySelectorAll(".imggrid__remove").forEach((btn) => {
-    btn.addEventListener("click", (e) => {
+  imgGrid.querySelectorAll(".imggrid__remove").forEach(btn => {
+    btn.addEventListener("click", e => {
       e.stopPropagation();
       const item = btn.closest(".imggrid__item");
       const index = Number(item.dataset.index);
@@ -380,7 +367,6 @@ function resetImagePicker() {
 
 function openAddModal() {
   modalTitle.textContent = "Thêm acc mới";
-  // Reset thủ công từng field, KHÔNG dùng accForm.reset() vì nó clear cả file input
   accIdField.value = "";
   fUsername.value = "";
   fPassword.value = "";
@@ -396,7 +382,7 @@ function openAddModal() {
 }
 
 function openEditModal(id) {
-  const a = accounts.find((x) => x.id === id);
+  const a = accounts.find(x => x.id === id);
   if (!a) return;
   modalTitle.textContent = "Sửa acc";
   accIdField.value = a.id;
@@ -422,7 +408,7 @@ function closeModal() {
 btnAdd.addEventListener("click", openAddModal);
 btnClose.addEventListener("click", closeModal);
 btnCancel.addEventListener("click", closeModal);
-modalOverlay.addEventListener("click", (e) => {
+modalOverlay.addEventListener("click", e => {
   if (e.target === modalOverlay) closeModal();
 });
 
@@ -432,28 +418,20 @@ togglePw.addEventListener("click", () => {
   togglePw.textContent = showing ? "👁" : "🙈";
 });
 
-// Nút dự phòng cho Acode / mobile browser — trigger input file theo cách tường minh
 const btnPickFallback = document.getElementById("btnPickFallback");
 if (btnPickFallback) {
   btnPickFallback.addEventListener("click", () => {
-    fImageFile.value = ""; // reset để có thể chọn lại ảnh cũ
+    fImageFile.value = "";
     fImageFile.click();
   });
 }
 
-// chọn nhiều ảnh — input file phủ toàn bộ vùng imgPick, không cần JS trigger
-
 fImageFile.addEventListener("change", () => {
   const files = Array.from(fImageFile.files || []);
   if (!files.length) return;
-
   let oversizedCount = 0;
-
-  files.forEach((file) => {
-    if (file.size > MAX_IMAGE_BYTES) {
-      oversizedCount++;
-      return;
-    }
+  files.forEach(file => {
+    if (file.size > MAX_IMAGE_BYTES) { oversizedCount++; return; }
     const reader = new FileReader();
     reader.onload = () => {
       currentImages.push(reader.result);
@@ -462,49 +440,59 @@ fImageFile.addEventListener("change", () => {
     reader.onerror = () => showToast("Không đọc được một ảnh, thử ảnh khác");
     reader.readAsDataURL(file);
   });
-
-  if (oversizedCount > 0) {
-    showToast(`${oversizedCount} ảnh quá lớn (tối đa ~4MB) đã bị bỏ qua`);
-  }
+  if (oversizedCount > 0) showToast(`${oversizedCount} ảnh quá lớn (tối đa ~4MB) đã bị bỏ qua`);
 });
 
-// submit thêm / sửa
-accForm.addEventListener("submit", (e) => {
+// ===== SUBMIT: LƯU ACC =====
+accForm.addEventListener("submit", async e => {
   e.preventDefault();
 
   const username = fUsername.value.trim();
   const password = fPassword.value.trim();
-
   if (!username || !password) {
     showToast("Cần nhập đủ tài khoản và mật khẩu");
     return;
   }
 
-  const id = accIdField.value;
-  const payload = {
-    username,
-    password,
-    rank: fRank.value.trim(),
-    status: fStatus.value.trim(),
-    note: fNote.value.trim(),
-    images: [...currentImages],
-  };
+  const submitBtn = accForm.querySelector('[type="submit"]');
+  submitBtn.textContent = "⏳ Đang upload...";
+  submitBtn.disabled = true;
 
-  if (id) {
-    accounts = accounts.map((a) => (a.id === id ? { ...a, ...payload } : a));
-    showToast("Đã lưu thay đổi");
-  } else {
-    accounts.push({ id: genId(), ...payload });
-    showToast("Đã thêm acc mới");
+  try {
+    // Upload ảnh mới lên Cloudinary, giữ nguyên link cũ
+    const uploadedImages = await uploadNhieuAnh(currentImages);
+
+    const id = accIdField.value;
+    const payload = {
+      username,
+      password,
+      rank: fRank.value.trim(),
+      status: fStatus.value.trim(),
+      note: fNote.value.trim(),
+      images: uploadedImages
+    };
+
+    if (id) {
+      accounts = accounts.map(a => a.id === id ? { ...a, ...payload } : a);
+      showToast("Đã lưu thay đổi ✅");
+    } else {
+      accounts.push({ id: genId(), ...payload });
+      showToast("Đã thêm acc mới ✅");
+    }
+
+    await luuDuLieu(accounts);
+    closeModal();
+    render();
+  } catch (err) {
+    console.error(err);
+    showToast("❌ Lỗi kết nối, thử lại nhé!");
+  } finally {
+    submitBtn.textContent = "Lưu";
+    submitBtn.disabled = false;
   }
-
-  saveAccounts(accounts);
-  closeModal();
-  render();
 });
 
-// ---------- Xoá acc ----------
-
+// ===== XOÁ ACC =====
 btnDelete.addEventListener("click", () => {
   pendingDeleteId = accIdField.value;
   if (!pendingDeleteId) return;
@@ -517,30 +505,42 @@ confirmCancel.addEventListener("click", () => {
   confirmOverlay.hidden = true;
 });
 
-confirmOverlay.addEventListener("click", (e) => {
+confirmOverlay.addEventListener("click", e => {
   if (e.target === confirmOverlay) {
     pendingDeleteId = null;
     confirmOverlay.hidden = true;
   }
 });
 
-confirmOk.addEventListener("click", () => {
+confirmOk.addEventListener("click", async () => {
   if (!pendingDeleteId) return;
-  accounts = accounts.filter((a) => a.id !== pendingDeleteId);
-  saveAccounts(accounts);
+  accounts = accounts.filter(a => a.id !== pendingDeleteId);
+  try {
+    await luuDuLieu(accounts);
+    showToast("Đã xoá acc");
+  } catch {
+    showToast("❌ Lỗi khi xoá, thử lại!");
+  }
   pendingDeleteId = null;
   confirmOverlay.hidden = true;
-  showToast("Đã xoá acc");
   render();
 });
 
-// ---------- Tìm kiếm ----------
-
+// ===== TÌM KIẾM =====
 searchBox.addEventListener("input", () => {
   searchTerm = searchBox.value;
   render();
 });
 
-// ---------- Khởi động ----------
-
-render();
+// ===== KHỞI ĐỘNG =====
+(async () => {
+  setLoading(true);
+  try {
+    accounts = await layDuLieu();
+  } catch (err) {
+    console.error(err);
+    showToast("❌ Không tải được dữ liệu!");
+    accounts = [];
+  }
+  render();
+})();
