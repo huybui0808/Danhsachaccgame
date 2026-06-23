@@ -12,34 +12,7 @@
 </head>
 <body>
 
-  <!-- Màn hình đăng nhập OTP qua Telegram -->
-  <div id="loginScreen" class="login">
-    <div class="login__card">
-      <div class="login__mark">⌬</div>
-      <h1 class="login__title">Kho Acc Liên Quân</h1>
-      <p class="login__sub">Đăng nhập bằng mã OTP gửi qua Telegram</p>
-
-      <div id="loginStep1">
-        <button id="btnSendOtp" class="btn btn--accent login__btn">
-          Gửi mã OTP qua Telegram
-        </button>
-        <p id="loginMsg1" class="login__msg"></p>
-      </div>
-
-      <div id="loginStep2" hidden>
-        <label class="field">
-          <span class="field__label">Nhập mã 6 số vừa nhận được</span>
-          <input id="otpInput" type="text" inputmode="numeric" maxlength="6"
-                 placeholder="••••••" autocomplete="off" class="login__otp" />
-        </label>
-        <button id="btnVerifyOtp" class="btn btn--accent login__btn">Xác nhận</button>
-        <button id="btnResendOtp" type="button" class="login__resend">Gửi lại mã</button>
-        <p id="loginMsg2" class="login__msg"></p>
-      </div>
-    </div>
-  </div>
-
-  <header id="appHeader" class="topbar" hidden>
+  <header class="topbar">
     <div class="topbar__inner">
       <div class="brand">
         <span class="brand__mark">⌬</span>
@@ -54,7 +27,7 @@
     </div>
   </header>
 
-  <main id="appMain" class="wrap" hidden>
+  <main class="wrap">
     <div class="toolbar">
       <input
         id="searchBox"
