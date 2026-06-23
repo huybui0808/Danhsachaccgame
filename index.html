@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kho Acc Liên Quân</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="Style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <div class="topbar__inner">
+      <div class="brand">
+        <span class="brand__mark">⌬</span>
+        <div class="brand__text">
+          <h1>Kho Acc Liên Quân</h1>
+          <p class="brand__sub">Lưu trữ &amp; quản lý acc — chỉ trên máy này</p>
+        </div>
+      </div>
+      <button id="btnAdd" class="btn btn--accent">
+        <span class="btn__plus">+</span> Thêm acc
+      </button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="toolbar">
+      <input
+        id="searchBox"
+        type="text"
+        class="search"
+        placeholder="Tìm theo tài khoản…"
+        autocomplete="off"
+      />
+      <span id="countLabel" class="count">0 acc</span>
+    </div>
+
+    <section id="grid" class="grid"></section>
+
+    <div id="emptyState" class="empty" hidden>
+      <div class="empty__mark">⌬</div>
+      <h2>Chưa có acc nào</h2>
+      <p>Bấm "Thêm acc" để lưu acc đầu tiên của bạn.</p>
+    </div>
+  </main>
+
+  <!-- Modal thêm / sửa acc -->
+  <div id="modalOverlay" class="overlay" hidden>
+    <div class="modal">
+      <div class="modal__head">
+        <h2 id="modalTitle">Thêm acc mới</h2>
+        <button id="btnClose" class="iconbtn" aria-label="Đóng">✕</button>
+      </div>
+
+      <form id="accForm" class="form">
+        <input type="hidden" id="accId" />
+
+        <label class="field">
+          <span class="field__label">Ảnh nhân vật (tuỳ chọn)</span>
+          <div class="imgpick" id="imgPick">
+            <img id="imgPreview" class="imgpick__preview" alt="" hidden />
+            <div id="imgPlaceholder" class="imgpick__placeholder">
+              <span class="imgpick__icon">🖼</span>
+              <span>Chọn ảnh từ máy</span>
+            </div>
+          </div>
+          <input id="fImageFile" type="file" accept="image/*" class="imgpick__input" />
+          <button type="button" id="btnRemoveImg" class="imgpick__remove" hidden>Xoá ảnh</button>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Tài khoản</span>
+          <input id="fUsername" type="text" placeholder="vd: ghosttrip123" required />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Mật khẩu</span>
+          <div class="pwwrap">
+            <input id="fPassword" type="password" placeholder="vd: QC@1312dom04" required />
+            <button type="button" id="togglePw" class="pweye" aria-label="Hiện/ẩn mật khẩu">👁</button>
+          </div>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Rank / Bậc (tuỳ chọn)</span>
+          <input id="fRank" type="text" placeholder="vd: Cao Thủ" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Tình trạng acc</span>
+          <input id="fStatus" type="text" placeholder="vd: Sạch / Bị cấm đến 23h20 ngày 24/6" />
+        </label>
+
+        <label class="field">
+          <span class="field__label">Ghi chú (tuỳ chọn)</span>
+          <textarea id="fNote" rows="3" placeholder="Ghi chú thêm…"></textarea>
+        </label>
+
+        <div class="form__actions">
+          <button type="button" id="btnDelete" class="btn btn--danger" hidden>Xoá acc</button>
+          <div class="form__actions-right">
+            <button type="button" id="btnCancel" class="btn btn--ghost">Hủy</button>
+            <button type="submit" class="btn btn--accent">Lưu</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Hộp xác nhận xoá -->
+  <div id="confirmOverlay" class="overlay" hidden>
+    <div class="modal modal--sm">
+      <h2>Xoá acc này?</h2>
+      <p class="confirm__text">Hành động này không thể hoàn tác.</p>
+      <div class="form__actions">
+        <div class="form__actions-right" style="width:100%; justify-content:flex-end;">
+          <button id="confirmCancel" class="btn btn--ghost">Hủy</button>
+          <button id="confirmOk" class="btn btn--danger">Xoá</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
